@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Energy Monitor - Enterprise Portal</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --org-accent: #a855f7; --text: #f8fafc; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .container { width: 95%; max-width: 1100px; display: none; padding: 20px; }
+        
+        /* Unified Auth Styles */
+        #auth-box { background: var(--card); padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; width: 400px; border: 1px solid #334155; }
+        .tab-group { display: flex; gap: 10px; margin-bottom: 25px; background: #0f172a; padding: 5px; border-radius: 10px; }
+        .tab-btn { flex: 1; padding: 10px; border: none; background: transparent; color: #94a3b8; cursor: pointer; border-radius: 8px; font-weight: bold; transition: 0.3s; }
+        .tab-btn.active { background: var(--card); color: var(--accent); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        .tab-btn.org-active { color: var(--org-accent); }
+        
+        input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; text-align: center; }
+        .login-btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        #user-btn { background: var(--accent); color: #0f172a; }
+        #org-btn { background: var(--org-accent); color: #f8fafc; }
+
+        /* User Dashboard */
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        .card { background: var(--card); padding: 25px; border-radius: 15px; border-top: 4px solid var(--accent); }
+        .val { font-size: 2.5em; font-weight: bold; color: var(--accent); margin: 5px 0; }
+        .unit { font-size: 0.4em; color: #94a3b8; margin-left: 5px; }
+        .label { color: #94a3b8; text-transform: uppercase; font-size: 0.8em; letter-spacing: 1px; }
+        
+        /* Org Table Styles */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: var(--card); border-radius: 12px; overflow: hidden; }
+        th { background: #334155; padding: 15px; text-align: left; color: var(--org-accent); }
+        td { padding: 15px; border-bottom: 1px solid #334155; }
+        .status-on { color: #4ade80; font-weight: bold; }
+
+        .logout { color: #ef4444; cursor: pointer; text-align: center; display: block; margin-top: 30px; font-size: 0.9em; text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div id="auth-box">
+    <div style="font-size: 2.5em; margin-bottom: 10px;"></div>
+    <h2>Energy Portal</h2>
+    
+    <div class="tab-group">
+        <button class="tab-btn active" id="u-tab" onclick="setTab('user')">User</button>
+        <button class="tab-btn" id="o-tab" onclick="setTab('org')">Organization</button>
+    </div>
+
+    <div id="user-inputs">
+        <input type="text" id="userApiKey" placeholder="Read API Key">
+        <input type="number" id="userChannelId" placeholder="Channel ID (e.g. 3233494)">
+        <button id="user-btn" class="login-btn" onclick="userLogin()">Connect to Monitor</button>
+    </div>
+
+    <div id="org-inputs" style="display:none;">
+        <input type="password" id="orgMasterKey" placeholder="Master User API Key">
+        <button id="org-btn" class="login-btn" onclick="orgLogin()">Admin Dashboard</button>
+    </div>
+    
+    <p id="auth-error" style="color: #ef4444; font-size: 0.8em; margin-top: 15px; min-height: 1.2em;"></p>
+</div>
+
+<div class="container" id="userDashboard">
+    <div style="text-align: center; margin-bottom: 30px;">
+        <h1 id="u-header">Monitor Live Stream</h1>
+        <p id="status" style="color: #94a3b8;">Awaiting Data...</p>
+    </div>
+
+    <div class="grid">
+        <div class="card"><div class="label">Power</div><div class="val" id="power">0.000<span class="unit">kW</span></div></div>
+        <div class="card"><div class="label">Voltage</div><div class="val" id="voltage">0.0<span class="unit">V</span></div></div>
+        <div class="card"><div class="label">Current</div><div class="val" id="current">0.00<span class="unit">A</span></div></div>
+        
+        <div class="card" style="grid-column: 1 / -1;"><canvas id="powerChart" height="100"></canvas></div>
+        
+        <div class="card"><div class="label">Daily Est.</div><div class="val" style="font-size: 1.8em;" id="dayKwh">0.0<span class="unit">kWh</span></div></div>
+        <div class="card"><div class="label">Monthly Est.</div><div class="val" style="font-size: 1.8em;" id="monthKwh">0.0<span class="unit">kWh</span></div></div>
+        <div class="card"><div class="label">Yearly Est.</div><div class="val" style="font-size: 1.8em;" id="yearKwh">0.0<span class="unit">kWh</span></div></div>
+    </div>
+    <span class="logout" onclick="location.reload()">Exit Session</span>
+</div>
+
+<div class="container" id="orgDashboard">
+    <h1 style="color: var(--org-accent);">Organization Overview</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Monitor Name</th>
+                <th>Channel ID</th>
+                <th>Last Power (kW)</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="org-list"></tbody>
+    </table>
+    <span class="logout" onclick="location.reload()">Exit Admin Panel</span>
+</div>
+
+<script>
+let powerChart;
+let sessionKey = "";
+let sessionID = "";
+
+function setTab(mode) {
+    const isUser = mode === 'user';
+    document.getElementById('u-tab').className = isUser ? 'tab-btn active' : 'tab-btn';
+    document.getElementById('o-tab').className = !isUser ? 'tab-btn active org-active' : 'tab-btn';
+    document.getElementById('user-inputs').style.display = isUser ? 'block' : 'none';
+    document.getElementById('org-inputs').style.display = !isUser ? 'block' : 'none';
+    document.getElementById('auth-error').innerText = "";
+}
+
+async function userLogin() {
+    const key = document.getElementById('userApiKey').value;
+    const id = document.getElementById('userChannelId').value;
+    
+    const res = await fetch(`https://api.thingspeak.com/channels/${id}/feeds/last.json?api_key=${key}`);
+    if (res.ok) {
+        sessionKey = key;
+        sessionID = id;
+        document.getElementById('auth-box').style.display = 'none';
+        document.getElementById('userDashboard').style.display = 'block';
+        document.body.style.alignItems = 'flex-start';
+        document.getElementById('u-header').innerText = "Monitor: " + id;
+        initChart();
+        loadChartData();
+        fetchData();
+        setInterval(fetchData, 15000);
+    } else {
+        document.getElementById('auth-error').innerText = "Access Denied: Invalid ID or Key";
+    }
+}
+
+async function orgLogin() {
+    const masterKey = document.getElementById('orgMasterKey').value;
+    const res = await fetch(`https://api.thingspeak.com/channels.json?api_key=${masterKey}`);
+    if (res.ok) {
+        const channels = await res.json();
+        document.getElementById('auth-box').style.display = 'none';
+        document.getElementById('orgDashboard').style.display = 'block';
+        document.body.style.alignItems = 'flex-start';
+        renderOrgTable(channels);
+    } else {
+        document.getElementById('auth-error').innerText = "Invalid Master Key";
+    }
+}
+
+function renderOrgTable(channels) {
+    const list = document.getElementById('org-list');
+    list.innerHTML = channels.map(ch => `
+        <tr>
+            <td>${ch.name || 'Unnamed Device'}</td>
+            <td>${ch.id}</td>
+            <td>Calculating...</td>
+            <td><span class="status-on">●</span> Online</td>
+        </tr>
+    `).join('');
+}
+
+// Reuse your existing logic for Charts and Fetching
+function initChart() {
+    const ctx = document.getElementById('powerChart').getContext('2d');
+    powerChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [{ label: 'Power (kW)', data: [], borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.1)', tension: 0.3, fill: true }] },
+        options: { responsive: true, scales: { x: { ticks: { color: "#94a3b8" } }, y: { ticks: { color: "#94a3b8" } } }, plugins: { legend: { labels: { color: "#f8fafc" } } } }
+    });
+}
+
+async function loadChartData() {
+    const res = await fetch(`https://api.thingspeak.com/channels/${sessionID}/feeds.json?results=20&api_key=${sessionKey}`);
+    const data = await res.json();
+    powerChart.data.labels = data.feeds.map(f => new Date(f.created_at).toLocaleTimeString());
+    powerChart.data.datasets[0].data = data.feeds.map(f => parseFloat(f.field1) || 0);
+    powerChart.update();
+}
+
+async function fetchData() {
+    try {
+        const res = await fetch(`https://api.thingspeak.com/channels/${sessionID}/feeds/last.json?api_key=${sessionKey}`);
+        const data = await res.json();
+        const kw = parseFloat(data.field1) || 0;
+        document.getElementById('power').innerHTML = `${kw.toFixed(3)}<span class="unit">kW</span>`;
+        document.getElementById('voltage').innerHTML = `${(parseFloat(data.field2)||0).toFixed(1)}<span class="unit">V</span>`;
+        document.getElementById('current').innerHTML = `${(parseFloat(data.field3)||0).toFixed(2)}<span class="unit">A</span>`;
+        document.getElementById('dayKwh').innerHTML = (kw * 24).toFixed(2) + '<span class="unit">kWh</span>';
+        document.getElementById('monthKwh').innerHTML = (kw * 24 * 30).toFixed(1) + '<span class="unit">kWh</span>';
+        document.getElementById('yearKwh').innerHTML = (kw * 24 * 365).toFixed(0) + '<span class="unit">kWh</span>';
+        document.getElementById('status').innerText = "Last Update: " + new Date(data.created_at).toLocaleTimeString();
+        updateChart(kw);
+    } catch (e) { console.log("Update Error"); }
+}
+
+function updateChart(val) {
+    const now = new Date().toLocaleTimeString();
+    powerChart.data.labels.push(now);
+    powerChart.data.datasets[0].data.push(val);
+    if (powerChart.data.labels.length > 20) { powerChart.data.labels.shift(); powerChart.data.datasets[0].data.shift(); }
+    powerChart.update();
+}
+</script>
+</body>
+</html>
