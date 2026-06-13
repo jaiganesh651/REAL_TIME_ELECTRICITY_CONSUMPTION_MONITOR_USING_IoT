@@ -27,8 +27,3 @@ Steps to Run the Project
 
 
 ########################################
-
-Developed By:
-R. Jaiganesh
-Final Year CSE Project
-2025–2026
